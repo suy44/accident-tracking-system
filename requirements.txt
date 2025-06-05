@@ -1,0 +1,4 @@
+flask
+pysftp
+python-dotenv
+werkzeug
