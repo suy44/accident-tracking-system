@@ -1,23 +1,25 @@
 import os
 import json
 import tempfile
-from flask import Flask, request, redirect, render_template, url_for, flash
+from flask import Flask, request, redirect, render_template
 from werkzeug.security import generate_password_hash, check_password_hash
 import pysftp
 
 app = Flask(__name__)
 
-# SFTP Credentials from Render environment
+# Read SFTP credentials from environment variables (Render Dashboard)
 SFTP_HOST = os.environ.get("SFTP_HOST")
 SFTP_USER = os.environ.get("SFTP_USER")
 SFTP_PASS = os.environ.get("SFTP_PASS")
 CREDENTIALS_FILENAME = "credentials.json"
 
+# Establish SFTP connection (host key check disabled for simplicity)
 def sftp_connection():
     cnopts = pysftp.CnOpts()
-    cnopts.hostkeys = None  # Disable host key checking
+    cnopts.hostkeys = None
     return pysftp.Connection(host=SFTP_HOST, username=SFTP_USER, password=SFTP_PASS, cnopts=cnopts)
 
+# Download JSON credentials file from SFTP
 def download_credentials():
     with sftp_connection() as sftp:
         if sftp.exists(CREDENTIALS_FILENAME):
@@ -25,6 +27,7 @@ def download_credentials():
                 return json.load(f)
         return {}
 
+# Upload new credentials to SFTP (replacing the old file)
 def upload_credentials(data):
     with tempfile.NamedTemporaryFile(delete=False, mode='w') as tmp:
         json.dump(data, tmp)
@@ -70,5 +73,7 @@ def signup():
 
     return render_template('signup.html')
 
+# 🟢 This part fixes the Render hosting issue by binding to 0.0.0.0 and using the expected port
 if __name__ == '__main__':
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=True)
