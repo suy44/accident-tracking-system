@@ -1,26 +1,27 @@
 import os
 import json
 import tempfile
-from flask import Flask, request, redirect, render_template
+from flask import Flask, request, jsonify, send_from_directory
 from werkzeug.security import generate_password_hash, check_password_hash
 import pysftp
 
-app = Flask(__name__)
+# Initialize Flask app with React static folder
+app = Flask(__name__, static_folder='build')
 
-# Read SFTP credentials from environment variables (Render Dashboard)
+# Load SFTP credentials from environment
 SFTP_HOST = os.environ.get("SFTP_HOST")
 SFTP_USER = os.environ.get("SFTP_USER")
 SFTP_PASS = os.environ.get("SFTP_PASS")
 CREDENTIALS_FILENAME = "credentials.json"
-SFTP_UPLOAD_DIR = "home"  # change this to your writable directory on SFTP
+SFTP_UPLOAD_DIR = "home"  # Update this if needed
 
-# Establish SFTP connection (host key check disabled for simplicity)
+# SFTP connection helper
 def sftp_connection():
     cnopts = pysftp.CnOpts()
     cnopts.hostkeys = None
     return pysftp.Connection(host=SFTP_HOST, username=SFTP_USER, password=SFTP_PASS, cnopts=cnopts)
 
-# Download JSON credentials file from SFTP
+# Download credentials from SFTP
 def download_credentials():
     with sftp_connection() as sftp:
         sftp.chdir(SFTP_UPLOAD_DIR)
@@ -29,7 +30,7 @@ def download_credentials():
                 return json.load(f)
         return {}
 
-# Upload new credentials to SFTP (replacing the old file)
+# Upload credentials to SFTP
 def upload_credentials(data):
     with tempfile.NamedTemporaryFile(delete=False, mode='w') as tmp:
         json.dump(data, tmp)
@@ -43,40 +44,42 @@ def upload_credentials(data):
 
     os.remove(tmp_path)
 
-@app.route('/')
-def home():
-    return "<h1>Welcome to the SFTP-linked Flask App</h1><a href='/login'>Login</a> | <a href='/signup'>Sign up</a>"
+# ✅ API endpoint: login
+@app.route('/api/login', methods=['POST'])
+def api_login():
+    data = request.json
+    username = data.get('username')
+    password = data.get('password')
+    creds = download_credentials()
 
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        creds = download_credentials()
-        username = request.form['username']
-        password = request.form['password']
+    if username in creds and check_password_hash(creds[username], password):
+        return jsonify({'success': True, 'message': f"Welcome {username}"})
+    return jsonify({'success': False, 'message': "Invalid username or password"})
 
-        if username in creds and check_password_hash(creds[username], password):
-            return f"<h3>Welcome, {username}!</h3><a href='/'>Back to Home</a>"
-        else:
-            return "<p>Invalid username or password.</p>"
+# ✅ API endpoint: signup
+@app.route('/api/signup', methods=['POST'])
+def api_signup():
+    data = request.json
+    username = data.get('username')
+    password = data.get('password')
+    creds = download_credentials()
 
-    return render_template('login.html')
+    if username in creds:
+        return jsonify({'success': False, 'message': "Username already exists"})
 
-@app.route('/signup', methods=['GET', 'POST'])
-def signup():
-    if request.method == 'POST':
-        creds = download_credentials()
-        username = request.form['username']
-        password = request.form['password']
+    creds[username] = generate_password_hash(password)
+    upload_credentials(creds)
+    return jsonify({'success': True, 'message': "Signup successful"})
 
-        if username in creds:
-            return "<p>Username already exists.</p>"
-        creds[username] = generate_password_hash(password)
-        upload_credentials(creds)
-        return "<p>Signup successful. You can now <a href='/login'>login</a>.</p>"
+# ✅ Serve React frontend (catch-all for "/", "/signup", etc.)
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_react(path):
+    if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
+        return send_from_directory(app.static_folder, path)
+    return send_from_directory(app.static_folder, 'index.html')
 
-    return render_template('signup.html')
-
-# Run on Render with correct host and port
+# ✅ Start app
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host='0.0.0.0', port=port)
