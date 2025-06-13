@@ -13,7 +13,7 @@ SFTP_HOST = os.environ.get("SFTP_HOST")
 SFTP_USER = os.environ.get("SFTP_USER")
 SFTP_PASS = os.environ.get("SFTP_PASS")
 CREDENTIALS_FILENAME = "credentials.json"
-SFTP_UPLOAD_DIR = "home"  # Update this if needed
+SFTP_UPLOAD_DIR = "home"  # Update if needed
 
 # SFTP connection helper
 def sftp_connection():
@@ -47,35 +47,45 @@ def upload_credentials(data):
 # ✅ API endpoint: login
 @app.route('/api/login', methods=['POST'])
 def api_login():
-    data = request.json
+    data = request.get_json()
     username = data.get('username')
     password = data.get('password')
+
+    if not username or not password:
+        return jsonify({'success': False, 'message': 'Missing credentials'}), 400
+
     creds = download_credentials()
 
     if username in creds and check_password_hash(creds[username], password):
-        return jsonify({'success': True, 'message': f"Welcome {username}"})
-    return jsonify({'success': False, 'message': "Invalid username or password"})
+        return jsonify({'success': True, 'message': f"Welcome {username}"}), 200
+    return jsonify({'success': False, 'message': "Invalid username or password"}), 400
 
 # ✅ API endpoint: signup
 @app.route('/api/signup', methods=['POST'])
 def api_signup():
-    data = request.json
+    data = request.get_json()
     username = data.get('username')
     password = data.get('password')
+
+    if not username or not password:
+        return jsonify({'success': False, 'message': 'Username and password are required'}), 400
+
     creds = download_credentials()
 
     if username in creds:
-        return jsonify({'success': False, 'message': "Username already exists"})
+        return jsonify({'success': False, 'message': "Username already exists"}), 400
 
     creds[username] = generate_password_hash(password)
     upload_credentials(creds)
-    return jsonify({'success': True, 'message': "Signup successful"})
+
+    return jsonify({'success': True, 'message': "Signup successful"}), 200
 
 # ✅ Serve React frontend (catch-all for "/", "/signup", etc.)
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def serve_react(path):
-    if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
+    full_path = os.path.join(app.static_folder, path)
+    if path != "" and os.path.exists(full_path):
         return send_from_directory(app.static_folder, path)
     return send_from_directory(app.static_folder, 'index.html')
 
