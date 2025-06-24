@@ -1,12 +1,27 @@
 import os
 import json
 import tempfile
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, session
+from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 import pysftp
+from datetime import timedelta
 
 # Initialize Flask app with React static folder
 app = Flask(__name__, static_folder='build')
+
+# ✅ Session & CORS settings for secure cross-origin cookie support
+app.config.update(
+    SESSION_COOKIE_SAMESITE="None",   # Allow cross-site cookie
+    SESSION_COOKIE_SECURE=True,       # 🔒 Required for SameSite=None to work
+    SESSION_COOKIE_HTTPONLY=True      # Prevent JavaScript access
+)
+
+# ✅ Enable CORS with credentials from Flask-hosted React (adjust as needed)
+CORS(app, supports_credentials=True, origins=["http://localhost:5000"])
+
+# ✅ Secret key for encrypting session cookie
+app.secret_key = os.environ.get("SECRET_KEY", "dj48$#nf93ksl!@4nfdls0aSFSF343")
 
 # Load SFTP credentials from environment
 SFTP_HOST = os.environ.get("SFTP_HOST")
@@ -57,8 +72,22 @@ def api_login():
     creds = download_credentials()
 
     if username in creds and check_password_hash(creds[username], password):
-        return jsonify({'success': True, 'message': f"Welcome {username}"}), 200
+        session['username'] = username  # ✅ set session
+        return jsonify({'success': True, 'message': f"Welcome {username}", 'redirect': '/Accueil'}), 200
+
     return jsonify({'success': False, 'message': "Invalid username or password"}), 400
+
+#protect 
+@app.route('/api/logout', methods=['POST'])
+def logout():
+    session.pop('username', None)
+    return jsonify({'success': True, 'message': "Bye"}), 200
+
+@app.route("/api/protected")
+def protected():
+    if 'username' in session:
+        return jsonify({'success': True, 'user': session['username']}), 200
+    return jsonify({'success': False, 'message': 'Not logged in'}), 401
 
 # ✅ API endpoint: signup
 @app.route('/api/signup', methods=['POST'])
@@ -78,7 +107,7 @@ def api_signup():
     creds[username] = generate_password_hash(password)
     upload_credentials(creds)
 
-    return jsonify({'success': True, 'message': "Signup successful"}), 200
+    return '', 200
 
 # ✅ Serve React frontend (catch-all for "/", "/signup", etc.)
 @app.route('/', defaults={'path': ''})
