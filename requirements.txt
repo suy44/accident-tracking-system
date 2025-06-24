@@ -2,3 +2,4 @@ flask
 pysftp
 python-dotenv
 werkzeug
+flask_cors
